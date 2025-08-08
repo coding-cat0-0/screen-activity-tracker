@@ -13,11 +13,4 @@ FastAPI	    Backend framework for APIs (login, signup, data upload, etc.)
 SQLModel	ORM to interact with SQLite DB easily (stores user & usage records)
 uvicorn	    Runs the FastAPI server (local development)
 
-🔐 How Login Works
-
-User logs in (or signs up) through FastAPI
-The received JWT token is saved in auth_config.json
-
-Next time the user opens the tracker:
-If token exists → it sends usage data
-If not → user must log in again
+Backend code is there for tracking activity but that requires manual entry for email and password. 
