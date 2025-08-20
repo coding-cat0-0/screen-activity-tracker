@@ -28,6 +28,7 @@ class AppUsage(SQLModel, table=True):
 class UserInput(SQLModel):
     name : str
     role : str 
+    company_id : Optional[int] = Field(default=None)
     email : str
     password: str
     hourly_rate : Optional[int] = Field(default=None)
@@ -79,11 +80,18 @@ class ForgetPassword(SQLModel):
              else:
                     return p    
                        
-
+class UpdateUser(SQLModel):
+    name : Optional[str]
+    role:Optional[str]
+    company_id : Optional[int]
+    email : Optional[str]
+    password : Optional[str]
+    
 class User(SQLModel, table=True):
     id : int = Field(default = None, primary_key=True)
     name : str
     role : str = Field(default ="client")
+    company_id :Optional[int] = Field(default=None, foreign_key="user.id")
     email : str
     password: str
     app_usage : list[AppUsage] = Relationship(back_populates= "users",
@@ -105,10 +113,10 @@ class Projects(SQLModel, table=True):
        status: str = Field(default="None")
        
 class UpdateProject(SQLModel):
-    client_id : int
-    name : str
-    description : str
-    status : str       
+    client_id : Optional[int]
+    name : Optional[str]
+    description : Optional[str]
+    status : Optional[str]       
         
 class Tasks(SQLModel, table=True):
     id : int = Field(default = None, primary_key=True)
@@ -119,11 +127,11 @@ class Tasks(SQLModel, table=True):
     status: str = Field(default="Inactive")
     
 class UpdateTask(SQLModel):
-    project_id : int
-    name : str
-    description : str
-    assigned_to : str
-    status : str
+    project_id : Optional[int]
+    name : Optional[str]
+    description : Optional[str]
+    assigned_to : Optional[str]
+    status : Optional[str]
         
 class Timesheet(SQLModel, table=True):
     id : int = Field(default = None, primary_key=True)

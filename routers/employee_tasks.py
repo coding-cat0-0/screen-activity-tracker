@@ -241,8 +241,43 @@ async def sync_timesheet(session: Session = Depends(get_session),
             print(f"No websocket with email {email} logged in..") 
     return {'message' : f'Synced {count} timesheet(s) from the queue'}
 
-# saving screenshot to db
+# Viewing tasks
+@router.get('/view_tasks')
+def get_tasks(session : Session = Depends(get_session),
+              current_user : User= Depends(get_current_user())):
+    
+    fetch_tasks = session.exec(select(Tasks).where(Tasks.assigned_to == current_user.id)).all()
+    if not fetch_tasks:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail = "No task available for you")
+    
+    return  fetch_tasks   
 
+# Viewing tasks
+@router.get('/view_attendance')
+def get_attendance(session : Session = Depends(get_session),
+              current_user : User= Depends(get_current_user())):
+    
+    fetch_attendance = session.exec(select(Attendance).where(Attendance.employee_id == current_user.id)).all()
+    if not fetch_attendance:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail = "Your attendance hasn't been marked")
+    
+    return  fetch_attendance       
+    
+# Viewing timesheet
+@router.get('/view_timesheet')
+def get_timesheet(session : Session = Depends(get_session),
+              current_user : User= Depends(get_current_user())):
+    
+    fetch_timesheet = session.exec(select(Attendance).where(Attendance.employee_id == current_user.id)).all()
+    if not fetch_timesheet:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail = "Your timesheet hasnt been synced yet")
+    
+    return  fetch_timesheet       
+            
+# For updating tasks
 @router.put('/update_task')
 def update_task(task_id : int,updates : str,
                 session: Session = Depends(get_session), current_user : User = Depends(get_current_user())):
@@ -294,7 +329,7 @@ async def upload_screenshot( timesheet_id : int, file : UploadFile = File(),
     filename = f"{current_user.id}_{datetime.utcnow().isoformat().replace(':','-')}.png"
     file_path = os.path.join(directory, filename)
     
-    with open(file_path, "wb") as f:
+    with open(file_path, "wb") as f: # write binary mode 
         f.write(content)
         
     screenshot = Screenshots(

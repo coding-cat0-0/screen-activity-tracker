@@ -3,9 +3,9 @@ from typing import Annotated
 from database.structure import get_session
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from datetime import datetime, timedelta
-from sqlmodels.user_usage import User, UserInput,AppUsage, Timesheet, Attendance,UsageCreate, Timesheet, ProjectInput, Projects, Tasks, Payroll,Screenshots, UpdateTask, UpdateProject
+from sqlmodels.user_usage import User, UserInput,UpdateUser,AppUsage, Timesheet,AppUserLink, Attendance,UsageCreate, Timesheet, ProjectInput, Projects, Tasks, Payroll,Screenshots, UpdateTask, UpdateProject
 from authentication.jwt_hashing import create_access_token, verify_password, get_current_user, bearer_scheme, get_hashed_password
-from sqlmodel import Session, select
+from sqlmodel import Session, select, delete
 from notifications.ws_router import active_connections
 from email.mime.text import MIMEText
 import smtplib
@@ -26,14 +26,14 @@ def create_employees(user:UserInput,
                             detail="Only clients are authorised to perform this action")
                 
     else:    
-        create = User(name=user.name, role = user.role,email=user.email,
+        create = User(name=user.name, role = user.role,company_id = current_user.id, email=user.email,
                       password=get_hashed_password(user.password),hourly_rate=user.hourly_rate)
         
         existing_email = select(User).where(User.email == user.email)
         check_existing_email : User = session.exec(existing_email).first()
         if check_existing_email:
             raise HTTPException(status_code= 400, detail='Email already exists')
-        if create.role not in ("employee", "client"):
+        if create.role != "employee":
 
             raise HTTPException(status_code=status.HTTP_406_NOT_ACCEPTABLE,
                                 detail = "Role should be employee")
@@ -279,6 +279,7 @@ def update_project_status(project_id : int, update : str,
    
     return {'message' : 'project status has been updated'}
 
+# Router for getting screenshot
 @router.get('/view_screenshot')
 def view_screenshot(employee_id:int,
             session:Session = Depends(get_session), current_user : User = Depends(get_current_user())):
@@ -294,14 +295,14 @@ def view_screenshot(employee_id:int,
     return query    
 
 # Update task
-@router.put('update_task_details')
-async def update_task_datils(task_id :int, update_task : UpdateTask,
+@router.put('/update_task_details')
+async def update_task_details(task_id :int, update_task : UpdateTask,
     session:Session= Depends(get_session), current_user : User = Depends(get_current_user())):
     
     query = session.exec(select(Tasks).where(Tasks.id == task_id)).first()
     if query:
-        for key, value in update_task.model_dump().items():
-            if value is not None:
+        for key, value in update_task.model_dump(exclude_unset=True).items():
+            if value not in (None, "", "string", 0):
                 setattr(query, key, value)
         session.add(query)
         session.commit()
@@ -315,20 +316,20 @@ async def update_task_datils(task_id :int, update_task : UpdateTask,
     if connection:
             print("Active Connection", active_connections)
             print("Target email", email) 
-            await connection.send_text(f"Task successfuly updated")  
+            await connection.send_text(f"Task successfuly updated")   
     else:
             print(f"No websocket with email {email} logged in..") 
     return {'messgae' : 'Task has been updated'}    
         
 # Update project details
-@router.put('update_task_details')
-async def update_project_datils(project_id :int, update_project : UpdateProject,
+@router.put('/update_project_details')
+async def update_project_details(project_id :int, update_project : UpdateProject,
     session:Session= Depends(get_session), current_user : User = Depends(get_current_user())):
     
     query = session.exec(select(Projects).where(Projects.id == project_id)).first()
     if query:
-        for key, value in update_project.model_dump().items():
-            if value is not None:
+        for key, value in update_project.model_dump(exclude_unset=True).items():
+            if value not in (None, "", "string", 0):
                 setattr(query, key, value)
         session.add(query)
         session.commit()
@@ -347,4 +348,80 @@ async def update_project_datils(project_id :int, update_project : UpdateProject,
     else:
             print(f"No websocket with email {email} logged in..") 
     
-    return {'message' : 'Project has been updated'}    
+    return {'message' : 'Project has been updated'}   
+
+# Update project details
+@router.put('/update_employee_details')
+async def update_employee_details(employee_id :int, update_employee : UpdateUser,
+    session:Session= Depends(get_session), current_user : User = Depends(get_current_user())):
+    
+    query = session.exec(select(User).where(User.id == employee_id)).first()
+    if query:
+        for key, value in update_employee.model_dump(exclude_unset=True).items():
+            if value not in (None, "", "string", 0):
+                if key == "email":
+                    existing_email = select(User).where(User.email == value)
+                    check_existing_email : User = session.exec(existing_email).first()
+                    if check_existing_email:
+                        raise HTTPException(status_code= 400, detail='Email already exists')
+                if key == "password":
+                    value = get_hashed_password(value)
+                setattr(query, key, value)
+        session.add(query)
+        session.commit()
+         
+    else:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"Employee of id {employee_id} not found") 
+    
+    email = current_user.email
+    connection = active_connections.get(email)
+        
+    if connection:
+            print("Active Connection", active_connections)
+            print("Target email", email) 
+            await connection.send_text(f"Employee successfuly updated")  
+    else:
+            print(f"No websocket with email {email} logged in..") 
+    
+    return {'message' : 'Employee has been updated'}   
+ 
+
+@router.delete('/delete_employee')
+async def delete_employee( employee_id : int,
+    session:Session = Depends(get_session), current_user : User = Depends(get_current_user())):
+    
+    if current_user.role != "client":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Only clients are authorised to perform this action")
+    
+    employee = session.get(User, employee_id)
+    if not employee or employee.role != 'employee': 
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail = f"No employee with id {employee_id} found")
+        
+    session.exec(delete(Timesheet).where(Timesheet.employee_id == employee_id))
+    session.exec(delete(Attendance).where(Attendance.employee_id == employee_id))
+    session.exec(delete(AppUsage).where(AppUsage.employee_id == employee_id))
+    session.exec(delete(Payroll).where(Payroll.employee_id == employee_id))
+    session.exec(delete(Screenshots).where(Screenshots.employee_id == employee_id))
+    session.exec(delete(AppUserLink).where(AppUserLink.user_id == employee_id))   
+    
+    projects = session.exec(select(Projects.id).where(Projects.client_id == current_user.id)).first()
+    session.exec(delete(Tasks).where(Tasks.project_id == projects))
+    session.delete(employee)
+    session.delete(projects)
+    session.commit()          
+        
+    email = current_user.email
+    connection = active_connections.get(email)
+    
+    if connection:
+        print("Active Connection", active_connections)
+        print("Target email", email) 
+        await connection.send_text(f"Employee and all their related data successfuly removed")  
+    else:
+        print(f"No websocket with email {email} logged in..") 
+        
+
+    return {'message' : 'Employee and all their related data has been removed'}     

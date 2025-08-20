@@ -3,17 +3,17 @@ from typing import Annotated
 from database.structure import get_session
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from datetime import datetime, timedelta
-from sqlmodels.user_usage import User, UserInput,AppUsage, Timesheet, Attendance, Timesheet, Screenshots, Projects, Tasks, Payroll
+from sqlmodels.user_usage import User, UserInput,AppUsage, Timesheet, Attendance, Timesheet,AppUserLink, Screenshots, Projects, Tasks, Payroll
 from authentication.jwt_hashing import create_access_token, verify_password, get_current_user, bearer_scheme, get_hashed_password
 from sqlmodel import Session, select
 from notifications.ws_router import active_connections
-
+from sqlmodel import SQLModel, delete
 router = APIRouter(
     tags=['Admin']
 )
 
 @router.post('/create_users')
-def create_users(user:UserInput,
+async def create_users(user:UserInput,
             session: Session = Depends(get_session), current_user : User = Depends(get_current_user())):
     
     if current_user.role != "admin":
@@ -35,7 +35,16 @@ def create_users(user:UserInput,
         session.add(create)
         session.commit()
         session.refresh(create)
-        return "Employee succesfully created"
+        email = current_user.email
+        connection = active_connections.get(email)
+        
+        if connection:
+            print("Active Connection", active_connections)
+            print("Target email", email) 
+            await connection.send_text(f"{create.role} successfuly created")  
+        else:
+            print(f"No websocket with email {email} logged in..") 
+        return f"{create.role} succesfully created"
     
 # Get Activity    
 @router.get('/get_user_activity')
@@ -108,12 +117,57 @@ def view_user_payroll(employee_id : int ,session:Session = Depends(get_session),
 def view_screenshot(employee_id:int,
             session:Session = Depends(get_session), current_user : User = Depends(get_current_user())):
     
-    if current_user.role != "client":
+    if current_user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Only clients are authorised to perform this action")
+                            detail="Only admins are authorised to perform this action")
     
     query = session.exec(select(Screenshots).where(Screenshots.employee_id == employee_id)).all()
     if not query:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail = "No screenshots found related to this employee")
     return query
+
+@router.delete('/delete_client')
+async def delete_client( client_id : int,
+    session:Session = Depends(get_session), current_user : User = Depends(get_current_user())):
+    
+    if current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Only admins are authorised to perform this action")
+    
+    client = session.get(User, client_id)
+    if not client or client.role != 'client': 
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail = f"No client with id {client_id} found")
+        
+    employees = session.exec(
+        select(User.id).where(User.company_id == client_id)
+        ).all()
+    
+    employee_ids = employees 
+    session.exec(delete(Timesheet).where(Timesheet.employee_id.in_(employee_ids)))
+    session.exec(delete(Attendance).where(Attendance.employee_id.in_(employee_ids)))
+    session.exec(delete(AppUsage).where(AppUsage.employee_id.in_(employee_ids)))
+    session.exec(delete(Payroll).where(Payroll.employee_id.in_(employee_ids)))
+    session.exec(delete(Screenshots).where(Screenshots.employee_id.in_(employee_ids)))
+    session.exec(delete(AppUserLink).where(AppUserLink.user_id.in_(employee_ids)))   
+    
+    projects = session.exec(select(Projects).where(Projects.client_id==client_id)).first()
+    session.exec(delete(Tasks).where(Tasks.project_id == projects.id))
+    session.exec(delete(Projects).where(Projects.client_id == client_id))
+    
+    session.delete(client) 
+    session.commit()          
+        
+    email = current_user.email
+    connection = active_connections.get(email)
+    
+    if connection:
+        print("Active Connection", active_connections)
+        print("Target email", email) 
+        await connection.send_text(f"Client and all their related data successfuly removed")  
+    else:
+        print(f"No websocket with email {email} logged in..") 
+        
+    return {'message' : 'Client and all their related data has been removed'}    
+    
