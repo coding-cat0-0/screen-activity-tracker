@@ -9,6 +9,7 @@ from sqlmodel import Session, select
 from notifications.ws_router import active_connections
 from sqlmodel import SQLModel, delete
 from typing import Optional
+from fastapi.responses import FileResponse
 
 router = APIRouter(
     tags=['Admin']
@@ -116,21 +117,6 @@ def view_user_payroll(employee_id : int ,session:Session = Depends(get_session),
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail = f"No employee by id {employee_id} found")
     return get_payroll
-
-# Viewing screenshots
-@router.get('/view_screenshot')
-def view_screenshot(employee_id:int,
-            session:Session = Depends(get_session), current_user : User = Depends(get_current_user())):
-    
-    if current_user.role != "admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Only admins are authorised to perform this action")
-    
-    query = session.exec(select(Screenshots).where(Screenshots.employee_id == employee_id)).all()
-    if not query:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail = "No screenshots found related to this employee")
-    return query
 
 @router.delete('/delete_client')
 async def delete_client( client_id : int,
@@ -253,3 +239,39 @@ async def delete_employee( employee_id : int,
         await connection.send_text(f"Employee and all their related data successfuly removed")  
     else:
         print(f"No websocket with email {email} logged in..") 
+        
+# Router for getting screenshot
+@router.get('/admin_view_screenshot')
+def view_screenshot(screenshot_id : int,
+            session:Session = Depends(get_session), current_user : User = Depends(get_current_user())):
+    
+    if current_user.role != "client":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Only clients are authorised to perform this action")
+    
+    screenshot = session.exec(select(Screenshots).where(Screenshots.id == screenshot_id)).first()
+    if not screenshot:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail = f"Screenshot of id {screenshot_id}found ")
+    return FileResponse(screenshot.filepath, media_type="image/png")   
+ 
+# Downloading screenshot 
+@router.get('/admin_download_screenshot')
+def download_screenshot(screenshot_id : int,
+            session:Session = Depends(get_session), current_user : User = Depends(get_current_user())):
+    
+    if current_user.role != "client":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Only clients are authorised to perform this action")
+    
+    screenshot = session.get(Screenshots, screenshot_id)
+    if not screenshot:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail = f"Screenshot of id {screenshot_id}found ")
+    
+    return FileResponse(
+            path = screenshot.filepath,
+            filename = f"screenshot_{screenshot.id}_{screenshot.timestamp}.png",
+            media_type="image/png"
+        )
+                

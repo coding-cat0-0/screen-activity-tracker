@@ -12,6 +12,7 @@ import json
 from email.mime.text import MIMEText
 import smtplib
 import os
+from fastapi.responses import FileResponse
 
 router = APIRouter(
     tags=['Employee']
@@ -343,7 +344,7 @@ async def upload_screenshot( timesheet_id : int, file : UploadFile = File(),
     session.commit()
     session.refresh(screenshot)
     
-    query = select(Timesheet).where(Timesheet.id == timesheet_id)
+    query = select(Tasks).where(Tasks.assigned_to == current_user.id)
     execute = session.exec(query).first()
     project = session.exec(select(Projects).where(Projects.id == execute.project_id)).first()
     client = select(User).where(User.id == project.client_id)
