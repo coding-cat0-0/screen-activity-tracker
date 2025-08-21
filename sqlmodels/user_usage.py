@@ -28,7 +28,6 @@ class AppUsage(SQLModel, table=True):
 class UserInput(SQLModel):
     name : str
     role : str 
-    company_id : Optional[int] = Field(default=None)
     email : str
     password: str
     hourly_rate : Optional[int] = Field(default=None)
@@ -86,7 +85,9 @@ class UpdateUser(SQLModel):
     company_id : Optional[int]
     email : Optional[str]
     password : Optional[str]
+    hourly_rate : Optional[str]
     
+        
 class User(SQLModel, table=True):
     id : int = Field(default = None, primary_key=True)
     name : str
